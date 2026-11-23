@@ -205,6 +205,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog .dlg{padding:18px;display:flex;flex-direction:column;gap:14px}
 dialog .fld input{width:100%}
 .ok{color:var(--up)} .err{color:var(--down)}
+input.secret{-webkit-text-security:disc;font-family:var(--mono)}
+input.secret.shown{-webkit-text-security:none}
 
 #toasts{position:fixed;right:16px;bottom:16px;z-index:60;display:flex;flex-direction:column;gap:8px;max-width:min(360px,calc(100vw - 32px))}
 .toast{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:14px}
@@ -266,10 +268,18 @@ footer{font-size:12px;color:var(--muted);text-align:center;max-width:780px;margi
     <div class="row"><h2>Settings &amp; data</h2><span class="sp"></span><button type="button" class="btn ghost sm" id="closeSet">Close</button></div>
     <p class="small ink2">Both keys are free. They are stored only in this browser (localStorage) and sent only to the provider they belong to. Without a Finnhub key the app runs on <b>simulated demo data</b>.</p>
     <label class="fld"><span><b>Finnhub API key</b>: real-time quotes, live trades, fundamentals, analyst ratings, earnings, news (<a href="https://finnhub.io/register" target="_blank" rel="noopener">get a free key</a>)</span>
-      <input id="fhKey" type="password" autocomplete="off" spellcheck="false" placeholder="e.g. cs1abc…"></label>
+      <input id="fhKey" class="secret" type="text" name="tl-fh-key" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="paste your Finnhub key"></label>
     <label class="fld"><span><b>Twelve Data API key</b>: daily price history for charts &amp; technicals (<a href="https://twelvedata.com/register" target="_blank" rel="noopener">get a free key</a>)</span>
-      <input id="tdKey" type="password" autocomplete="off" spellcheck="false" placeholder="e.g. 9f3c…"></label>
-    <div class="row"><button type="button" class="btn ghost sm" id="testKeys">Test keys</button><span id="testOut" class="small"></span></div>
+      <input id="tdKey" class="secret" type="text" name="tl-td-key" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="paste your Twelve Data key"></label>
+    <div class="row"><button type="button" class="btn ghost sm" id="testKeys">Test keys</button><button type="button" class="btn ghost sm" id="showKeys" aria-pressed="false">Show keys</button><span id="testOut" class="small"></span></div>
+    <div style="border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--surface2);display:flex;flex-direction:column;gap:8px">
+      <div class="row"><h3>Use Ticker Lab on another device</h3></div>
+      <p class="small ink2">Copy a private setup link and open it on your phone, another computer or another browser. It sets that browser up in one tap.</p>
+      <label class="small row" style="gap:6px"><input type="checkbox" id="setupAll" checked> Also include my watchlist, holdings, paper account and settings</label>
+      <div class="row"><button type="button" class="btn sm" id="copySetup">Copy setup link</button><button type="button" class="btn ghost sm hide" id="shareSetup">Share…</button><span id="setupOut" class="small"></span></div>
+      <textarea id="setupText" class="hide" readonly rows="3" style="width:100%;font:12px var(--mono);border:1px solid var(--line);border-radius:7px;padding:6px;background:var(--surface);color:var(--ink)"></textarea>
+      <p class="tiny warn">! The link contains your API keys. Treat it like a password: send it only to yourself, for example in a note or an email to yourself, never in a group chat or post.</p>
+    </div>
     <div class="row">
       <label class="fld">Risk-free rate %<input id="setRate" type="number" step="any" min="0" max="15"></label>
       <label class="fld">Real account size $<input id="setAcct" type="number" step="any" min="0"></label>
@@ -951,6 +961,7 @@ function render() {
 }
 function go(hash) { if (location.hash !== hash) location.hash = hash; else onRoute(); }
 function onRoute() {
+  if (/^#setup=/.test(location.hash)) { if (handleSetupLink()) { location.reload(); return; } }
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const tab = ['dash', 'scan', 'stock', 'options', 'portfolio', 'learn'].includes(parts[0]) ? parts[0] : 'dash';
   const prevTab = route.tab;
@@ -1701,8 +1712,42 @@ function setupSearch() {
 function openSym(s) { s = (s || '').toUpperCase().replace(/[^A-Z0-9.\-]/g, ''); if (!s) return; $('#q').value = ''; $('#sugg').hidden = true; go('#/' + (route.tab === 'options' ? 'options' : 'stock') + '/' + s); }
 
 /* --- settings --- */
+const b64u = str => btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = str => decodeURIComponent(escape(atob(str.replace(/-/g, '+').replace(/_/g, '/'))));
+function setupLink(includeAll) {
+  const fk = $('#fhKey').value.trim() || S.fhKey, tk = $('#tdKey').value.trim() || S.tdKey;
+  const d = { v: 1, fhKey: fk, tdKey: tk };
+  if (includeAll) for (const k of ['watch', 'lots', 'opts', 'alerts', 'cash', 'startCash', 'startDate', 'startSpy', 'acct', 'riskPct', 'rate', 'realCash', 'theme']) if (S[k] !== undefined) d[k] = S[k];
+  if (includeAll) d.journal = S.journal.slice(0, 60);
+  return location.origin + location.pathname + '#setup=' + b64u(JSON.stringify(d));
+}
+async function copySetup() {
+  const out = $('#setupOut'), ta = $('#setupText');
+  const fk = $('#fhKey').value.trim() || S.fhKey;
+  if (!fk) { out.innerHTML = '<span class="err">Add your Finnhub key first.</span>'; return; }
+  const link = setupLink($('#setupAll').checked);
+  ta.value = link; ta.classList.remove('hide');
+  try { await navigator.clipboard.writeText(link); out.innerHTML = '<span class="ok">✓ Copied. Paste it into a note or an email to yourself, then open it on the other device.</span>'; }
+  catch { ta.select(); out.innerHTML = 'Copy the link below (it’s selected).'; }
+  if (navigator.share) $('#shareSetup').classList.remove('hide');
+}
+// Called on load and when the hash changes: applies a #setup=… link, then strips it from the URL.
+function handleSetupLink() {
+  const m = location.hash.match(/^#setup=([A-Za-z0-9_-]+)$/); if (!m) return false;
+  history.replaceState(null, '', location.pathname + '#/dash');
+  let d; try { d = JSON.parse(unb64u(m[1])); } catch { toast('That setup link is incomplete or damaged. Copy it again from Settings.', 'bad', 10000); return false; }
+  if (!d || typeof d !== 'object' || typeof d.fhKey !== 'string') { toast('That setup link is not valid.', 'bad'); return false; }
+  const hasData = 'watch' in d || 'lots' in d;
+  const msg = `Set up this browser from your Ticker Lab setup link?\n\nIt will save your API keys here${hasData ? ', and replace this browser’s watchlist, holdings and paper account with the ones in the link' : ''}.`;
+  if (!confirm(msg)) return false;
+  S.fhKey = d.fhKey.trim(); S.tdKey = (d.tdKey || '').trim();
+  const allowed = ['watch', 'lots', 'opts', 'alerts', 'journal', 'cash', 'startCash', 'startDate', 'startSpy', 'acct', 'riskPct', 'rate', 'realCash', 'theme'];
+  for (const k of allowed) if (k in d) S[k] = d[k];
+  S.ack = true; save(); cache.clear();
+  return true;
+}
 function openSettings() {
-  $('#fhKey').value = S.fhKey; $('#tdKey').value = S.tdKey; $('#setRate').value = S.rate; $('#setAcct').value = S.acct; $('#setRisk').value = S.riskPct; $('#testOut').textContent = '';
+  $('#fhKey').value = S.fhKey; $('#tdKey').value = S.tdKey; $('#setRate').value = S.rate; $('#setAcct').value = S.acct; $('#setRisk').value = S.riskPct; $('#testOut').textContent = ''; $('#setupOut').textContent = ''; $('#setupText').classList.add('hide'); $('#shareSetup').classList.add('hide');
   $('#settings').showModal();
 }
 function applySettings() {
@@ -1765,11 +1810,16 @@ function init() {
   $('#closeSet').onclick = () => $('#settings').close();
   $('#setForm').addEventListener('submit', e => { if (e.submitter && e.submitter.value === 'save') applySettings(); });
   $('#clearCache').onclick = () => { cache.clear(); toast('Cached market data cleared.', '', 2500); };
+  $('#copySetup').onclick = copySetup;
+  $('#shareSetup').onclick = () => { try { navigator.share({ title: 'Ticker Lab setup link (private)', url: $('#setupText').value }); } catch { } };
+  $('#showKeys').onclick = e => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', on); e.currentTarget.textContent = on ? 'Hide keys' : 'Show keys'; $$('input.secret').forEach(i => i.classList.toggle('shown', on)); };
   $('#exportBtn').onclick = () => { const { fhKey, tdKey, ...rest } = S; const blob = new Blob([JSON.stringify(rest, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `ticker-lab-${etDate()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); };
   $('#importFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const j = JSON.parse(await f.text()); for (const k of ['watch', 'lots', 'journal', 'opts', 'alerts', 'cash', 'startCash', 'startDate', 'startSpy', 'acct', 'riskPct', 'rate']) if (k in j) S[k] = j[k]; save(); boot(); render(); toast('Data imported.', 'good'); } catch { toast('That file isn’t a Ticker Lab export.', 'bad'); } };
   setupSearch();
   addEventListener('hashchange', onRoute);
   let rw = innerWidth; addEventListener('resize', () => { if (Math.abs(innerWidth - rw) > 40) { rw = innerWidth; invalidate(); } });
+  if (/^#setup=/.test(location.hash) && handleSetupLink()) toast('This browser is set up. Loading live data…', 'good', 6000);
+  applyTheme();
   wsConnect(); boot(); onRoute();
   // periodic refresh: quotes every 60s when not streaming, re-render analysis every 20s
   setInterval(() => { if (isDemo()) return; const syms = [...new Set([...PULSE.map(p => p[0]), ...S.watch, ...S.lots.map(l => l.sym), ...S.opts.map(o => o.sym)])]; if (!wsLive || marketState().k !== 'on') syms.forEach(getQuote); }, 60000);
