@@ -242,6 +242,7 @@ footer{font-size:12px;color:var(--muted);text-align:center;max-width:780px;margi
 
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button role="tab" data-tab="dash">Dashboard</button>
+    <button role="tab" data-tab="scan">Find plays</button>
     <button role="tab" data-tab="stock">Research</button>
     <button role="tab" data-tab="options">Options lab</button>
     <button role="tab" data-tab="portfolio">Portfolio</button>
@@ -250,6 +251,7 @@ footer{font-size:12px;color:var(--muted);text-align:center;max-width:780px;margi
 
   <main>
     <section id="tab-dash" class="stack"></section>
+    <section id="tab-scan" class="stack" hidden></section>
     <section id="tab-stock" class="stack" hidden></section>
     <section id="tab-options" class="stack" hidden></section>
     <section id="tab-portfolio" class="stack" hidden></section>
@@ -423,7 +425,7 @@ function getQuote(sym) {
       const j = await fh('/quote', { symbol: sym });
       if (!j || (!j.c && !j.pc)) throw new Error('No quote for ' + sym);
       const prev = D.q[sym];
-      D.q[sym] = { c: j.c, d: j.d, dp: j.dp, h: j.h, l: j.l, o: j.o, pc: j.pc, t: j.t };
+      D.q[sym] = { c: j.c, d: j.d, dp: j.dp, h: j.h, l: j.l, o: j.o, pc: j.pc, t: j.t, _ts: Date.now() };
       if (!prev) invalidate();
       tick(sym, prev?.c);
       delete D.err[sym];
@@ -562,7 +564,9 @@ const Demo = (() => {
       case '/stock/metric': {
         if (ind === 'ETF') return { metric: { beta: 1, '52WeekHigh': null } };
         const pe = 8 + r() * 55, g = -5 + r() * 40;
-        return { metric: { peTTM: pe, epsGrowth5Y: g, epsGrowthTTMYoy: g + gauss(r) * 8, revenueGrowthTTMYoy: -3 + r() * 30, netProfitMarginTTM: -4 + r() * 35, roeTTM: -5 + r() * 45, psTTM: 1 + r() * 18, pbAnnual: 1 + r() * 25, beta: .5 + vol * 2.2, currentDividendYieldTTM: r() < .5 ? r() * 3.2 : 0, 'totalDebt/totalEquityQuarterly': r() * 2 } };
+        const sr = build(sym), cl = k => sr[sr.length - 1 - k][4], ret = k => (cl(0) / cl(k) - 1) * 100, yr = sr.slice(-252), spy = build('SPY');
+        const rel13 = ret(63) - (spy[spy.length - 1][4] / spy[spy.length - 64][4] - 1) * 100;
+        return { metric: { '52WeekHigh': Math.max(...yr.map(a => a[2])), '52WeekLow': Math.min(...yr.map(a => a[3])), '13WeekPriceReturnDaily': ret(63), '26WeekPriceReturnDaily': ret(126), '52WeekPriceReturnDaily': ret(251), 'priceRelativeToS&P50013Week': rel13, peTTM: pe, epsGrowth5Y: g, epsGrowthTTMYoy: g + gauss(r) * 8, revenueGrowthTTMYoy: -3 + r() * 30, netProfitMarginTTM: -4 + r() * 35, roeTTM: -5 + r() * 45, psTTM: 1 + r() * 18, pbAnnual: 1 + r() * 25, beta: .5 + vol * 2.2, currentDividendYieldTTM: r() < .5 ? r() * 3.2 : 0, 'totalDebt/totalEquityQuarterly': r() * 2 } };
       }
       case '/stock/recommendation': { if (ind === 'ETF') return []; const sb = Math.round(r() * 20), b = Math.round(r() * 25), h = Math.round(r() * 18), s = Math.round(r() * 4), ss = Math.round(r() * 2); return [{ period: etDate().slice(0, 8) + '01', strongBuy: sb, buy: b, hold: h, sell: s, strongSell: ss, symbol: sym }]; }
       case '/calendar/earnings': return { earningsCalendar: Object.keys(CO).concat(S.watch).filter(s => info(s)[1] !== 'ETF').map(s => ({ symbol: s, date: addDays(etDate(), 3 + hash(s) % 70), hour: hash(s) % 2 ? 'amc' : 'bmo', epsEstimate: +(1 + (hash(s) % 400) / 100).toFixed(2) })) };
@@ -920,14 +924,14 @@ function invalidate() { if (renderTimer) return; renderTimer = setTimeout(() => 
 function render() {
   renderFeed(); renderBanner();
   $$('nav.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === route.tab)));
-  for (const t of ['dash', 'stock', 'options', 'portfolio', 'learn']) $('#tab-' + t).hidden = t !== route.tab;
-  const fn = { dash: renderDash, stock: renderStock, options: renderOptions, portfolio: renderPortfolio, learn: renderLearn }[route.tab];
+  for (const t of ['dash', 'scan', 'stock', 'options', 'portfolio', 'learn']) $('#tab-' + t).hidden = t !== route.tab;
+  const fn = { dash: renderDash, scan: renderScan, stock: renderStock, options: renderOptions, portfolio: renderPortfolio, learn: renderLearn }[route.tab];
   const y = window.scrollY; fn($('#tab-' + route.tab)); window.scrollTo(0, y);
 }
 function go(hash) { if (location.hash !== hash) location.hash = hash; else onRoute(); }
 function onRoute() {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
-  const tab = ['dash', 'stock', 'options', 'portfolio', 'learn'].includes(parts[0]) ? parts[0] : 'dash';
+  const tab = ['dash', 'scan', 'stock', 'options', 'portfolio', 'learn'].includes(parts[0]) ? parts[0] : 'dash';
   const prevTab = route.tab;
   route = { tab, sym: tab === 'stock' || tab === 'options' ? (parts[1] || route.sym || S.watch[0] || 'AAPL').toUpperCase() : route.sym, anchor: tab === 'learn' ? parts[1] : null };
   if (route.sym && (tab === 'stock' || tab === 'options')) { const sy = route.sym; loadCore(sy); getEarningsAll().then(() => getEarningsSym(sy)); if (tab === 'stock') { getNews(route.sym); getPeers(route.sym); } }
@@ -970,7 +974,7 @@ function renderDash(el) {
   el.innerHTML = `
     <div class="tiles">${PULSE.map(([s, n]) => { const qq = D.q[s]; return `<div class="tile pulse-card" data-go="#/stock/${s}"><div class="eyebrow">${n} · ${s}</div><div class="v" data-lp="${s}">${px(qq?.c)}</div><div class="s"><span data-lcp="${s}" class="num ${cls(qq?.d)}">${qq ? arrow(qq.d) + ' ' + pct(qq.dp / 100, 2) : '…'}</span></div></div>`; }).join('')}</div>
     ${regime}
-    <div class="card"><div class="card-h"><h2>Today’s read on your watchlist</h2><span class="small muted">${loading && hasHistory() ? `<span class="spinner"></span> analyzing ${loading} more…` : hasHistory() ? 'Rules-based screen, not a recommendation' : 'Needs price history (Twelve Data key)'}</span></div>
+    <div class="card"><div class="card-h"><h2>Today’s read on your watchlist</h2><button class="btn ghost sm" data-go="#/scan">Scan the whole market →</button><span class="small muted" style="flex-basis:100%">${loading && hasHistory() ? `<span class="spinner"></span> analyzing ${loading} more…` : hasHistory() ? 'Rules-based screen, not a recommendation' : 'Needs price history (Twelve Data key)'}</span></div>
       <div class="ideas">
         ${ideaCol('Possible entries', 'buyzone', ideas.buyzone, 'No pullback-in-uptrend setups right now. Patience is a position.')}
         ${ideaCol('Extended: take-profit watch', 'takeprofit', ideas.extended, 'Nothing overheated.')}
@@ -1187,7 +1191,9 @@ function drawPriceChart(box, rbox, A) {
 const LAB = { sym: null, spot: null, iv: null, ivUser: false, exp: null, rate: null, qty: 1, strat: null, legs: null, fwd: 0 };
 function labSuggest(A) {
   if (!A || !A.ready) return { key: 'bull_call', why: 'Load price history to get a suggestion that fits the trend and volatility.' };
-  const highVol = A.hvPct >= .5; const own = S.lots.some(l => l.sym === A.sym);
+  const highVol = A.hvPct >= .5; const ownQty = S.lots.filter(l => l.sym === A.sym).reduce((s, l) => s + l.qty, 0); const own = ownQty > 0;
+  if (own && ownQty < 100 && ['extended', 'avoid', 'weak'].includes(A.v.k)) return { key: A.v.k === 'extended' ? 'covered_call' : 'protective_put', why: `You own ${num(ownQty, ownQty % 1 ? 2 : 0)} shares. Option strategies on stock you own work in blocks of 100 shares, so with fewer, this is just for learning. ${A.v.k === 'extended' ? 'With 100+ shares, selling a covered call above the market would collect income and set a profit-taking price.' : 'A protective put would cap your downside while the trend weakens.'}` };
+  if (own && ownQty >= 100 && A.v.k === 'hold' && !highVol) return { key: 'covered_call', why: `You own ${num(ownQty, 0)} shares in a steady uptrend. Selling an out-of-the-money covered call earns income while you hold; the trade-off is your shares get sold if price rises past the strike.` };
   const k = A.v.k;
   if (k === 'extended') return own ? { key: 'covered_call', why: 'You hold shares and the stock is extended. Selling a call above the market collects income and sets a profit-taking price.' } : { key: 'bull_put', why: 'Uptrend but stretched. Rather than chase, a put credit spread below support profits if price just holds up.' };
   if (k === 'buyzone' || k === 'hold') return highVol ? { key: k === 'buyzone' ? 'csp' : 'bull_put', why: `Bullish trend and volatility is relatively high (${Math.round(A.hvPct * 100)}th percentile), so selling premium is favored: get paid to wait for your price.` } : { key: 'bull_call', why: `Bullish trend and volatility is relatively low (${Math.round(A.hvPct * 100)}th percentile), so buying options is cheaper. A spread limits the cost and the decay.` };
@@ -1359,16 +1365,53 @@ function renderPortfolio(el) {
   const eq = S.cash + mv(paper) + optVal; const tot = eq / S.startCash - 1;
   const spyNow = D.q.SPY?.c; const spyRet = S.startSpy && spyNow ? spyNow / S.startSpy - 1 : null;
   const realized = S.journal.reduce((s, j) => s + (j.realized || 0), 0);
-  const posTable = (list, acct) => !list.length ? `<div class="empty">${acct === 'paper' ? 'No paper positions. Buy from the ticket below or from a stock’s Research page.' : 'Add shares you actually own to get take-profit and risk checks on them.'}</div>` :
-    `<div class="tbl-wrap"><table><thead><tr><th>Symbol</th><th class="r">Shares</th><th class="r">Avg cost</th><th class="r">Price</th><th class="r">P/L</th><th>Check ${q('takeprofit')}</th><th class="r hide-sm">Trail stop ${q('stop')}</th><th></th></tr></thead><tbody>
+  const realVal = mv(real);
+  const posTable = (list, acct) => !list.length ? `<div class="empty">${acct === 'paper' ? 'No paper positions. Buy from the ticket above or from a stock’s Research page.' : 'Add shares you actually own to get take-profit and risk checks on them.'}</div>` :
+    `<div class="tbl-wrap"><table><thead><tr><th>Symbol</th><th class="r">Shares</th><th class="r">Avg cost</th><th class="r">Price</th><th class="r">P/L</th>${acct === 'real' ? '<th class="r">Weight</th>' : ''}<th>Check ${q('takeprofit')}</th><th class="r hide-sm">Trail stop ${q('stop')}</th><th></th></tr></thead><tbody>
     ${list.map(p => { const a = posAdvice(p.sym, p.qty, p.avg, p.first, p.stop); const plv = ok(a.price) ? (a.price - p.avg) * p.qty : null; return `<tr>
       <td><a class="sym" href="#/stock/${p.sym}">${p.sym}</a><div class="co">since ${fmtDate(p.first, { month: 'short', day: 'numeric', year: '2-digit' })}</div></td>
       <td class="r num">${num(p.qty, p.qty % 1 ? 2 : 0)}</td><td class="r num">${px(p.avg)}</td><td class="r num" data-lp="${p.sym}">${px(a.price)}</td>
       <td class="r num ${cls(plv)}">${sUsd(plv, 0)}<div class="tiny">${pct(a.gain)}</div></td>
+      ${acct === 'real' ? (() => { const w = realVal > 0 ? (a.price ?? p.avg) * p.qty / realVal : null; return `<td class="r num ${w > .25 ? 'warn' : ''}">${pct(w, 0, false)}</td>`; })() : ''}
       <td style="white-space:normal;min-width:200px">${toneTag(a.action.tone, a.action.label)}${a.sigs.length ? `<details class="why"><summary>why (${a.sigs.length})</summary><ul>${a.sigs.map(s => `<li>${esc(s.t)}</li>`).join('')}</ul></details>` : ''}</td>
       <td class="r num hide-sm">${px(a.trail)}</td>
-      <td>${acct === 'paper' ? `<button class="btn ghost sm" data-sellall="${p.sym}">Sell</button>` : `<button class="btn danger sm" data-rmreal="${p.sym}" title="Remove holding">×</button>`}</td></tr>`; }).join('')}</tbody></table></div>`;
+      <td>${acct === 'paper' ? `<button class="btn ghost sm" data-sellall="${p.sym}">Sell</button>` : `<div class="row" style="flex-wrap:nowrap;gap:6px"><button class="btn ghost sm" data-go="#/options/${p.sym}" title="Option strategies for shares you own">Options ideas</button><button class="btn danger sm" data-rmreal="${p.sym}" title="Remove holding">×</button></div>`}</td></tr>`; }).join('')}</tbody></table></div>`;
+  const realCost = real.reduce((s, p) => s + p.cost, 0), realPL = realVal - realCost;
+  const realDay = real.reduce((s, p) => s + (ok(D.q[p.sym]?.d) ? D.q[p.sym].d * p.qty : 0), 0);
+  const cashR = S.realCash || 0, realTot = realVal + cashR;
+  const top = real.map(p => ({ sym: p.sym, w: realVal > 0 ? (D.q[p.sym]?.c ?? p.avg) * p.qty / realVal : 0 })).sort((a, b) => b.w - a.w)[0];
+  const tips = [];
+  if (real.length) {
+    if (top && top.w > .25 && real.length > 1) tips.push(['warn', `${top.sym} is ${pct(top.w, 0, false)} of your stock holdings. Many investors cap any single stock at 10–25% so one bad report can’t sink the account.`]);
+    if (real.length < 5) tips.push(['info', `You hold ${real.length} stock${real.length > 1 ? 's' : ''}. Owning more companies across different sectors (or an index fund like SPY/VOO) smooths out the ups and downs.`]);
+    const big = real.filter(p => p.qty >= 100); if (big.length) tips.push(['info', `You own 100+ shares of ${big.map(p => p.sym).join(', ')}, enough to sell covered calls for extra income. Tap “Options ideas”.`]);
+    if (cashR > 0) tips.push(['info', `You have ${usd(cashR, 0)} in cash. Position sizes on the Research and Find plays pages now use your ${usd(realTot, 0)} account total.`]);
+  }
   el.innerHTML = `
+  <div class="card"><div class="card-h"><h2>My portfolio</h2><span class="tiny muted">Your real shares, entered by you. Saved in this browser only, not connected to any broker.</span></div>
+    ${real.length ? `<div class="tiles" style="margin-bottom:12px">
+      <div class="tile"><div class="eyebrow">Stocks value</div><div class="v">${usd(realVal, 0)}</div><div class="s">${real.length} holding${real.length > 1 ? 's' : ''}</div></div>
+      <div class="tile"><div class="eyebrow">Today</div><div class="v ${cls(realDay)}">${sUsd(realDay, 0)}</div><div class="s ${cls(realDay)}">${pct(realVal - realDay > 0 ? realDay / (realVal - realDay) : null, 2)}</div></div>
+      <div class="tile"><div class="eyebrow">Total gain / loss</div><div class="v ${cls(realPL)}">${sUsd(realPL, 0)}</div><div class="s ${cls(realPL)}">${pct(realCost > 0 ? realPL / realCost : null, 1)} on ${usd(realCost, 0)} invested</div></div>
+      <div class="tile"><div class="eyebrow">Account total</div><div class="v">${usd(realTot, 0)}</div><div class="s">incl. ${usd(cashR, 0)} cash</div></div>
+    </div>` : ''}
+    ${posTable(real, 'real')}
+    ${tips.length ? `<ul class="reasons" style="margin-top:12px">${tips.map(([t, x]) => `<li><span class="m ${t === 'warn' ? 'warn' : 'muted'}">${t === 'warn' ? '!' : '•'}</span><span class="small">${esc(x)}</span></li>`).join('')}</ul>` : ''}
+    <h3 style="margin-top:16px">Add a stock you own</h3>
+    <p class="tiny muted" style="margin-top:2px">Find shares and average cost in your broker app under Positions. Bought at different times? Enter each purchase separately, or one line with your average cost.</p>
+    <form class="form" id="realForm" style="margin-top:8px">
+      <label class="fld">Symbol<input name="sym" style="width:90px" required spellcheck="false" placeholder="AAPL"></label>
+      <label class="fld w-s">Shares<input name="qty" type="number" min="0.0001" step="any" required></label>
+      <label class="fld w-s">Avg cost/share<input name="price" type="number" min="0.0001" step="any" required></label>
+      <label class="fld">Bought on (approx.)<input name="date" type="date" value="${etDate()}" max="${etDate()}" required></label>
+      <label class="fld w-s">Stop (optional)<input name="stop" type="number" min="0" step="any"></label>
+      <button class="btn">Add</button></form>
+    <form class="form" id="cashForm" style="margin-top:12px">
+      <label class="fld">Cash in the account $<input name="cash" type="number" min="0" step="any" value="${cashR || ''}" placeholder="0"></label>
+      <button class="btn ghost sm">Update cash</button><span class="tiny muted">Used for position sizing on Research and Find plays.</span></form>
+  </div>
+
+  <h2 style="margin-top:8px">Paper trading <span class="small muted" style="font-weight:400">· $100k practice account</span></h2>
   <div class="tiles">
     <div class="tile"><div class="eyebrow">Paper equity</div><div class="v">${usd(eq, 0)}</div><div class="s ${cls(tot)}">${pct(tot, 2)} since ${fmtDate(S.startDate)}</div></div>
     <div class="tile"><div class="eyebrow">Cash</div><div class="v">${usd(S.cash, 0)}</div><div class="s">${pct(S.cash / eq, 0, false)} of equity</div></div>
@@ -1393,17 +1436,6 @@ function renderPortfolio(el) {
       <td class="r num ${cls(m.pl)}">${sUsd(m.pl, 0)}</td><td><button class="btn ghost sm" data-closeopt="${o.id}">Close</button></td></tr>`; }).join('')}</tbody></table></div>` : '<div class="empty">No paper options. Build one in the Options lab and hit “Paper-trade this strategy”.</div>'}
   </div>
 
-  <div class="card"><div class="card-h"><h2>My real holdings</h2><span class="tiny muted">Tracked locally for take-profit / risk checks. Not connected to any broker.</span></div>
-    ${posTable(real, 'real')}
-    <form class="form" id="realForm" style="margin-top:12px">
-      <label class="fld">Symbol<input name="sym" style="width:90px" required spellcheck="false"></label>
-      <label class="fld w-s">Shares<input name="qty" type="number" min="0.0001" step="any" required></label>
-      <label class="fld w-s">Cost/share<input name="price" type="number" min="0.0001" step="any" required></label>
-      <label class="fld">Bought on<input name="date" type="date" value="${etDate()}" max="${etDate()}" required></label>
-      <label class="fld w-s">Stop (opt.)<input name="stop" type="number" min="0" step="any"></label>
-      <button class="btn ghost">Add holding</button></form>
-  </div>
-
   <div class="grid g2">
     <div class="card"><div class="card-h"><h2>Price alerts</h2>${'Notification' in window && Notification.permission === 'default' ? '<button class="btn ghost sm" data-act="notify">Enable notifications</button>' : ''}</div>
       <form class="form" id="alertForm">
@@ -1425,9 +1457,15 @@ function renderPortfolio(el) {
   $('#realForm', el).onsubmit = e => {
     e.preventDefault(); const f = e.target; const sym = f.sym.value.trim().toUpperCase(); if (!sym) return;
     S.lots.push({ id: uid(), acct: 'real', sym, qty: +f.qty.value, price: +f.price.value, date: f.date.value || etDate(), stop: +f.stop.value || null });
-    save(); loadCore(sym); getEarningsAll(); render();
+    syncAcct(); save(); loadCore(sym); getEarningsAll(); toast(`${sym} added to your portfolio`, 'good', 3000); render();
   };
+  $('#cashForm', el).onsubmit = e => { e.preventDefault(); S.realCash = Math.max(0, +e.target.cash.value || 0); syncAcct(); save(); render(); };
   $('#alertForm', el).onsubmit = e => { e.preventDefault(); const f = e.target; const sym = f.sym.value.trim().toUpperCase(); if (!sym || !(+f.price.value > 0)) return; S.alerts.push({ sym, op: f.op.value, price: +f.price.value }); save(); loadCore(sym); render(); };
+}
+function syncAcct() {
+  // when the user has entered real holdings or cash, size positions off that real account total
+  const real = positions('real'); const v = real.reduce((s, p) => s + (D.q[p.sym]?.c ?? p.avg) * p.qty, 0) + (S.realCash || 0);
+  if (v > 0) S.acct = Math.round(v);
 }
 async function paperTrade(sym, side, qty, note, extra = {}) {
   if (!sym || !(qty > 0)) return;
@@ -1451,6 +1489,122 @@ async function paperTrade(sym, side, qty, note, extra = {}) {
   save(); render();
 }
 
+/* --- market scanner --- */
+const UNIVERSE = [
+  ['Technology', 'AAPL MSFT NVDA AVGO ORCL CRM ADBE AMD INTC QCOM TXN AMAT MU LRCX KLAC ADI NOW INTU PANW CRWD PLTR SHOP UBER ANET MRVL DELL IBM CSCO'],
+  ['Communication', 'GOOGL META NFLX DIS TMUS VZ T SPOT'],
+  ['Consumer', 'AMZN TSLA HD LOW MCD SBUX NKE COST WMT TGT TJX BKNG CMG KO PEP PG'],
+  ['Financials', 'JPM BAC WFC GS MS C SCHW BLK AXP V MA PYPL COF HOOD'],
+  ['Health care', 'UNH LLY JNJ PFE MRK ABBV TMO ABT AMGN GILD ISRG VRTX CVS'],
+  ['Industrials', 'CAT DE BA GE HON UPS UNP LMT RTX'],
+  ['Energy & other', 'XOM CVX COP SLB NEE LIN PLD']
+].flatMap(([sec, list]) => list.split(' ').map(sym => ({ sym, sec })));
+const SCAN = { running: false, stage: '', done: 0, total: 0, pre: null, plays: null, at: null, mode: null, filter: 'all' };
+function loadLastScan() {
+  const c = cache.get('scan:last', 7 * 864e5); const mode = isDemo() ? 'demo' : 'live';
+  if (c && c.mode === mode) Object.assign(SCAN, { plays: c.plays, pre: c.pre, at: c.at, mode }); else Object.assign(SCAN, { plays: null, pre: null, at: null, mode });
+}
+function prescreen(sym, sec) {
+  const m = D.m[sym] || {}, qq = D.q[sym], p = qq?.c; if (!ok(p)) return null;
+  const hi = pick(m, ['52WeekHigh']); const r13 = pick(m, ['13WeekPriceReturnDaily']), r26 = pick(m, ['26WeekPriceReturnDaily']), r52 = pick(m, ['52WeekPriceReturnDaily']);
+  const rel13 = pick(m, ['priceRelativeToS&P50013Week']); const F = fundamentals(sym);
+  const off = ok(hi) && hi > 0 ? Math.min(0, p / hi - 1) : null;
+  let mom = 50; if (ok(r26)) mom += clamp(r26, -30, 30); if (ok(r52)) mom += clamp(r52 / 2, -15, 15); if (ok(rel13)) mom += clamp(rel13, -10, 10); mom = clamp(mom, 0, 100);
+  let entry = 50; if (ok(off)) entry = off > -.03 ? 55 : off > -.15 ? (ok(r52) && r52 > 0 ? 85 : 55) : off > -.3 ? 40 : 20;
+  const fp = [];
+  if (ok(F.peg)) fp.push(F.peg < 1 ? 100 : F.peg < 2 ? 75 : F.peg < 3 ? 45 : 20); else if (ok(F.pe) && F.pe < 0) fp.push(20);
+  if (ok(F.rev)) fp.push(F.rev > 15 ? 100 : F.rev > 5 ? 75 : F.rev > 0 ? 50 : 15);
+  if (ok(F.margin)) fp.push(F.margin > 15 ? 100 : F.margin > 5 ? 70 : F.margin > 0 ? 50 : 15);
+  if (ok(F.roe)) fp.push(F.roe > 20 ? 100 : F.roe > 10 ? 70 : F.roe > 0 ? 45 : 15);
+  const fund = fp.length ? fp.reduce((a, b) => a + b, 0) / fp.length : 50;
+  return { sym, sec, p, off, r13, r26, r52, rel13, peg: F.peg, rev: F.rev, mom: Math.round(mom), fund: Math.round(fund), entry, score: Math.round(.4 * mom + .35 * fund + .25 * entry) };
+}
+async function runScan() {
+  if (SCAN.running) return;
+  SCAN.running = true; SCAN.mode = isDemo() ? 'demo' : 'live';
+  try {
+    SCAN.stage = `Pass 1 of 2: screening ${UNIVERSE.length} large-cap stocks (prices, performance, fundamentals)`; SCAN.done = 0; SCAN.total = UNIVERSE.length; invalidate();
+    await Promise.all(UNIVERSE.map(async ({ sym }) => {
+      const fresh = D.q[sym]?._ts && Date.now() - D.q[sym]._ts < 5 * 60e3;
+      await Promise.all([fresh ? null : getQuote(sym),
+        D.m[sym] ? null : cachedFh('m', sym, '/stock/metric', { symbol: sym, metric: 'all' }, 864e5).then(v => D.m[sym] = (v && v.metric) || {}).catch(() => D.m[sym] = {})]);
+      SCAN.done++; invalidate();
+    }));
+    const pre = UNIVERSE.map(u => prescreen(u.sym, u.sec)).filter(Boolean).sort((a, b) => b.score - a.score);
+    SCAN.pre = pre.slice(0, 40);
+    const finalists = pre.filter(x => !(ok(x.r52) && x.r52 < -20)).slice(0, 15);
+    const plays = [];
+    if (hasHistory()) {
+      SCAN.stage = `Pass 2 of 2: deep-checking the top ${finalists.length} (price history, trend, analyst ratings). Free data plan: about 8 stocks a minute`;
+      SCAN.done = 0; SCAN.total = finalists.length; invalidate();
+      getEarningsAll(); await getHistory('SPY');
+      await Promise.all(finalists.map(async x => { await Promise.all([getHistory(x.sym), getFundamentals(x.sym)]); SCAN.done++; invalidate(); }));
+      const bonus = { buyzone: 10, hold: 3, recover: 0, extended: -8, weak: -15, avoid: -25, bounce: -15 };
+      for (const x of finalists) {
+        const A = analyze(x.sym); if (!A.ready) continue;
+        const ps = A.score + (bonus[A.v.k] || 0) + (A.plan.rr >= 2 ? 5 : A.plan.rr < 1 ? -5 : 0) - (ok(A.erDays) && A.erDays >= 0 && A.erDays <= 7 ? 5 : 0);
+        const sug = labSuggest(A);
+        plays.push({ sym: x.sym, sec: x.sec, name: nameOf(x.sym), price: A.price, ps: Math.round(ps), score: A.score, k: A.v.k, label: A.v.label, tone: A.v.tone,
+          pros: A.reasons.filter(r => r.good).slice(0, 3).map(r => r.t), cons: A.reasons.filter(r => !r.good).slice(0, 2).map(r => r.t),
+          zone: A.plan.zone, stop: A.plan.stop, target: A.plan.target, rr: A.plan.rr, opt: STRATS[sug.key].name, optWhy: sug.why,
+          er: A.er && A.erDays >= 0 ? { date: A.er.date, days: A.erDays } : null });
+      }
+      plays.sort((a, b) => b.ps - a.ps);
+    }
+    SCAN.plays = hasHistory() ? plays : null; SCAN.at = Date.now();
+    cache.set('scan:last', { plays: SCAN.plays, pre: SCAN.pre, at: SCAN.at, mode: SCAN.mode });
+    if (route.tab !== 'scan') toast(`Market scan finished: ${plays.length} plays found. See “Find plays”.`, 'good', 8000);
+  } catch (e) { toast('Scan stopped: ' + e.message, 'bad'); }
+  finally { SCAN.running = false; invalidate(); }
+}
+const SETUPS = [['all', 'All setups'], ['buyzone', 'Buy the dip'], ['hold', 'Healthy uptrends'], ['extended', 'Extended (watch)'], ['other', 'Weak / mixed']];
+function renderScan(el) {
+  if (SCAN.mode !== (isDemo() ? 'demo' : 'live') && !SCAN.running) loadLastScan();
+  const plays = SCAN.plays || [];
+  const inSet = p => SCAN.filter === 'all' ? ['buyzone', 'hold', 'recover', 'extended'].includes(p.k) : SCAN.filter === 'other' ? ['recover', 'weak', 'avoid', 'bounce'].includes(p.k) : p.k === SCAN.filter;
+  const shown = plays.filter(inSet);
+  const ago = SCAN.at ? Math.round((Date.now() - SCAN.at) / 60000) : null;
+  const agoTxt = ago == null ? '' : ago < 1 ? 'just now' : ago < 60 ? `${ago} min ago` : ago < 1440 ? `${Math.round(ago / 60)} h ago` : `${Math.round(ago / 1440)} d ago`;
+  const card = p => `<div class="card play" style="display:flex;flex-direction:column;gap:10px">
+    <div class="row"><a class="sym" style="font-size:19px" href="#/stock/${p.sym}">${p.sym}</a><span class="small muted" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">${esc(p.name || '')}</span><span class="sp"></span><span class="tiny muted">score</span><b class="mono" style="font-size:20px">${p.score}</b></div>
+    <div class="row">${toneTag(p.tone, p.label)}<span class="tag neutral">${esc(p.sec)}</span><span class="sp"></span><span class="small">now <b class="mono" data-lp="${p.sym}">${px(D.q[p.sym]?.c ?? p.price)}</b></span></div>
+    <div class="tiles">
+      <div class="tile"><div class="eyebrow">Entry zone</div><div class="v" style="font-size:15px">${p.zone ? `${px(Math.min(...p.zone))}–${px(Math.max(...p.zone))}` : 'Wait'}</div></div>
+      <div class="tile"><div class="eyebrow">Stop</div><div class="v down" style="font-size:15px">${px(p.stop)}</div></div>
+      <div class="tile"><div class="eyebrow">Target</div><div class="v up" style="font-size:15px">${px(p.target)}</div></div>
+      <div class="tile"><div class="eyebrow">Reward : risk</div><div class="v ${p.rr >= 2 ? 'up' : p.rr < 1 ? 'down' : ''}" style="font-size:15px">${p.rr.toFixed(1)} : 1</div></div>
+    </div>
+    <ul class="reasons">${p.pros.map(t => `<li><span class="m up">+</span><span>${esc(t)}</span></li>`).join('')}${p.cons.map(t => `<li><span class="m down">${MINUS}</span><span>${esc(t)}</span></li>`).join('')}</ul>
+    <p class="small ink2"><b>Options idea:</b> ${esc(p.opt)}. ${esc(p.optWhy)}</p>
+    ${p.er && p.er.days <= 21 ? `<p class="small warn">! Earnings ${fmtDate(p.er.date)} (${p.er.days} days): expect a big move either way.</p>` : ''}
+    <div class="row" style="margin-top:auto"><button class="btn sm" data-go="#/stock/${p.sym}">Research →</button><button class="btn ghost sm" data-go="#/options/${p.sym}">Options lab →</button>${S.watch.includes(p.sym) ? '<span class="tiny muted">✓ on watchlist</span>' : `<button class="btn ghost sm" data-addw="${p.sym}">+ Watchlist</button>`}</div>
+  </div>`;
+  el.innerHTML = `
+  <div class="card"><div class="card-h"><h2>Find plays ${q('scanner')}</h2>${SCAN.at && !SCAN.running ? `<span class="small muted">Last scan ${agoTxt}</span>` : ''}</div>
+    <p class="small ink2">Scans ${UNIVERSE.length} large, actively traded US stocks for setups where <b>trend, momentum, price level and fundamentals</b> line up, then builds a trade plan for each. It applies the same rules as the Research page across the whole list. These are ideas to research, not recommendations.</p>
+    ${isDemo() ? '<p class="small warn" style="margin-top:6px">! Demo mode: results below come from simulated prices.</p>' : !S.tdKey ? '<p class="small warn" style="margin-top:6px">! Add a Twelve Data key in Settings. Pass 2 (charts and trade plans) needs price history.</p>' : ''}
+    <div class="row" style="margin-top:12px">
+      ${SCAN.running ? `<div style="flex:1;min-width:220px"><div class="small"><span class="spinner"></span> ${esc(SCAN.stage)}… <b class="mono">${SCAN.done}/${SCAN.total}</b></div><div class="meter" style="height:8px;margin-top:6px"><i style="width:${SCAN.total ? SCAN.done / SCAN.total * 100 : 0}%"></i></div><p class="tiny muted" style="margin-top:4px">You can use other tabs while it runs. The first scan of the day takes about 4–6 minutes on the free data plans; later scans are faster.</p></div>`
+      : `<button class="btn" data-act="scan">${SCAN.at ? 'Rescan the market' : 'Scan the market'}</button><span class="tiny muted">Takes a few minutes on the free data plans. You can keep using the app.</span>`}
+    </div>
+  </div>
+  ${plays.length ? `<div class="row"><div class="chips">${SETUPS.map(([k, n]) => { const c = k === 'all' ? plays.filter(p => ['buyzone', 'hold', 'recover', 'extended'].includes(p.k)).length : k === 'other' ? plays.filter(p => ['recover', 'weak', 'avoid', 'bounce'].includes(p.k)).length : plays.filter(p => p.k === k).length; return `<button class="chip" aria-pressed="${SCAN.filter === k}" data-setup="${k}">${n} <span class="muted">${c}</span></button>`; }).join('')}</div></div>
+    ${shown.length ? `<div class="grid g3">${shown.map(card).join('')}</div>` : '<div class="card empty">No plays in this group right now.</div>'}`
+    : SCAN.at && !SCAN.running ? `<div class="card empty">${SCAN.plays ? 'No stocks passed the deep check this time. That can happen in a weak market; try again later.' : 'Pass 1 is done (see the ranking below). Add a Twelve Data key to get full plays.'}</div>` : ''}
+  ${SCAN.pre && SCAN.pre.length ? `<div class="card"><details><summary class="small" style="cursor:pointer"><b>Pass 1 ranking</b> · top ${SCAN.pre.length} of ${UNIVERSE.length} screened</summary>
+    <div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>#</th><th>Symbol</th><th class="r">Score</th><th class="r">Momentum</th><th class="r">Fundamentals</th><th class="r">Off 52-wk high</th><th class="r">6-month</th><th class="r">vs S&amp;P (3m)</th><th class="r">PEG</th></tr></thead><tbody>
+    ${SCAN.pre.map((x, i) => `<tr class="click" data-go="#/stock/${x.sym}"><td class="muted">${i + 1}</td><td><span class="sym">${x.sym}</span><div class="co">${esc(x.sec)}</div></td><td class="r num"><b>${x.score}</b></td><td class="r num">${x.mom}</td><td class="r num">${x.fund}</td><td class="r num">${pct(x.off)}</td><td class="r num ${cls(x.r26)}">${ok(x.r26) ? pct(x.r26 / 100) : '—'}</td><td class="r num ${cls(x.rel13)}">${ok(x.rel13) ? pct(x.rel13 / 100) : '—'}</td><td class="r num">${ok(x.peg) ? num(x.peg, 2) : '—'}</td></tr>`).join('')}
+    </tbody></table></div></details></div>` : ''}
+  ${!SCAN.at && !SCAN.running ? `<div class="card"><h3>What it looks for</h3><ul class="reasons" style="margin-top:8px">
+    <li><span class="m up">+</span><span><b>Buy the dip:</b> long-term uptrend, price pulled back near support or the 50-day average.</span></li>
+    <li><span class="m up">+</span><span><b>Healthy uptrend:</b> trending up and not overheated; good for starter positions.</span></li>
+    <li><span class="m warn">!</span><span><b>Extended:</b> strong but stretched. Watch for a pullback instead of chasing.</span></li>
+    <li><span class="m up">+</span><span>Bonus for reasonable valuation for its growth (PEG), rising revenue, healthy margins, and analyst support.</span></li>
+    <li><span class="m down">${MINUS}</span><span>Penalty for downtrends, poor reward:risk, and earnings within a week.</span></li></ul></div>` : ''}`;
+  $$('[data-setup]', el).forEach(b => b.onclick = () => { SCAN.filter = b.dataset.setup; render(); });
+  $$('[data-addw]', el).forEach(b => b.onclick = e => { e.stopPropagation(); addWatch(b.dataset.addw); });
+}
+
 /* --- learn --- */
 const LEARN = [
   ['Signals in this app', [
@@ -1458,6 +1612,7 @@ const LEARN = [
     ['buyzone', 'Buy zone: pullback in an uptrend', 'The most common swing-trading entry: a stock in a long-term uptrend (above the 200-day, 50-day above 200-day) dips back toward its 50-day average or a prior support level, often with RSI cooling below ~45. You get a defined place for a stop (just below support) so your risk is small relative to the potential move.'],
     ['takeprofit', 'When to take profits', 'No rule is perfect, but common triggers are: RSI above 70 after a big run, price stretched 15–20%+ above the 50-day, price reaching a prior high/resistance, or a position up 20–25%+. Many traders sell in pieces (e.g. a third at a time) and trail a stop on the rest, so they bank gains without fully exiting a winner. Selling covered calls is another way to “take profits” on shares.'],
     ['plan', 'The trade plan', 'Before entering, decide three numbers: <b>entry</b>, <b>stop</b> (where you admit you’re wrong) and <b>target</b>. The app places the stop half an ATR below the nearest support (or 2×ATR below price) and the target at the next resistance, or a 3× risk projection if the stock is at highs. Write the plan in the journal and follow it.'],
+    ['scanner', 'How “Find plays” works', 'The scanner checks about 100 large, liquid US stocks in two passes. <b>Pass 1</b> scores every stock on momentum (3/6/12-month returns and performance vs. the S&P 500), entry (how far below its 52-week high it trades, with a 3–15% pullback in a stock that is up on the year scoring best) and fundamentals (PEG, revenue growth, margins, ROE). <b>Pass 2</b> takes the 15 best, pulls their price history and runs the full Research analysis: trend vs. the 50/200-day averages, RSI, MACD, support and resistance, analyst ratings and earnings dates. Plays are ranked by that score, with a bonus for buy-the-dip setups and good reward:risk and a penalty for being extended or for earnings within a week. It only looks at large caps, and it can’t see news or why a stock moved, so always read the chart and headlines before acting.'],
     ['regime', 'Market regime', 'Roughly 3 in 4 stocks move with the overall market. When the S&P 500 is above its 200-day average, buying dips tends to work; when it’s below, rallies tend to fail. Many traders reduce size or hold more cash in a risk-off regime.']
   ]],
   ['Technical indicators', [
@@ -1561,6 +1716,7 @@ document.addEventListener('click', e => {
   }
   const act = t.dataset.act; const sym = route.sym;
   if (act === 'settings') openSettings();
+  else if (act === 'scan') runScan();
   else if (act === 'ack') { S.ack = true; save(); render(); }
   else if (act === 'watch') addWatch(sym);
   else if (act === 'unwatch') { S.watch = S.watch.filter(s => s !== sym); save(); render(); }
