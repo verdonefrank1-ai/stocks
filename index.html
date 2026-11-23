@@ -325,6 +325,7 @@ const cls = x => !ok(x) ? 'flat' : x > 0 ? 'up' : x < 0 ? 'down' : 'flat';
 const arrow = x => !ok(x) ? '' : x > 0 ? '▲' : x < 0 ? '▼' : '■';
 const safeUrl = u => /^https?:\/\//i.test(u || '') ? u : '#';
 const q = (k) => `<a class="q" href="#/learn/${k}" title="What is this?" aria-label="Explain">?</a>`;
+const ord = n => n + ((n % 100 >= 11 && n % 100 <= 13) ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th'));
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 function etParts(d = new Date()) {
@@ -1096,7 +1097,7 @@ function renderStock(el) {
         <div><div class="k">ATR (14) ${q('atr')}</div><div class="v">${px(A.a)} <span class="tiny muted">${pct(A.a / A.price)}</span></div></div>
         <div><div class="k">Support</div><div class="v">${px(A.sup)}</div></div>
         <div><div class="k">Resistance</div><div class="v">${A.res ? px(A.res) : 'at highs'}</div></div>
-        <div><div class="k">Volatility (20d) ${q('hv')}</div><div class="v">${pct(A.hv20, 0, false)} <span class="tiny muted">${Math.round(A.hvPct * 100)}th pct</span></div></div>
+        <div><div class="k">Volatility (20d) ${q('hv')}</div><div class="v">${pct(A.hv20, 0, false)} <span class="tiny muted">${ord(Math.round(A.hvPct * 100))} pct</span></div></div>
       </div>
     </div>
   </div>
@@ -1228,7 +1229,7 @@ function labSuggest(A) {
   if (own && ownQty >= 100 && A.v.k === 'hold' && !highVol) return { key: 'covered_call', why: `You own ${num(ownQty, 0)} shares in a steady uptrend. Selling an out-of-the-money covered call earns income while you hold; the trade-off is your shares get sold if price rises past the strike.` };
   const k = A.v.k;
   if (k === 'extended') return own ? { key: 'covered_call', why: 'You hold shares and the stock is extended. Selling a call above the market collects income and sets a profit-taking price.' } : { key: 'bull_put', why: 'Uptrend but stretched. Rather than chase, a put credit spread below support profits if price just holds up.' };
-  if (k === 'buyzone' || k === 'hold') return highVol ? { key: k === 'buyzone' ? 'csp' : 'bull_put', why: `Bullish trend and volatility is relatively high (${Math.round(A.hvPct * 100)}th percentile), so selling premium is favored: get paid to wait for your price.` } : { key: 'bull_call', why: `Bullish trend and volatility is relatively low (${Math.round(A.hvPct * 100)}th percentile), so buying options is cheaper. A spread limits the cost and the decay.` };
+  if (k === 'buyzone' || k === 'hold') return highVol ? { key: k === 'buyzone' ? 'csp' : 'bull_put', why: `Bullish trend and volatility is relatively high (${ord(Math.round(A.hvPct * 100))} percentile), so selling premium is favored: get paid to wait for your price.` } : { key: 'bull_call', why: `Bullish trend and volatility is relatively low (${ord(Math.round(A.hvPct * 100))} percentile), so buying options is cheaper. A spread limits the cost and the decay.` };
   if (k === 'avoid' || k === 'weak') return own ? { key: 'protective_put', why: 'You hold shares while the trend weakens. A put caps your downside without selling.' } : { key: 'bear_put', why: 'Downtrend. A put spread profits from further weakness with defined risk.' };
   if (k === 'bounce') return { key: 'bull_put', why: 'Oversold. If you want to bet on a bounce, a far-OTM put credit spread defines your risk.' };
   return highVol ? { key: 'iron_condor', why: 'No clear trend and elevated volatility. A range-bound, premium-selling trade fits.' } : { key: 'long_straddle', why: 'No clear trend and cheap volatility. A straddle bets on a breakout either way (avoid right before earnings).' };
@@ -1269,7 +1270,7 @@ function renderOptions(el) {
       <label class="fld w-s">Contracts<input type="number" id="lQty" step="1" min="1" max="100" value="${LAB.qty}"></label>
       <label class="fld w-s">Rate %<input type="number" id="lRate" step="0.1" min="0" max="15" value="${(LAB.rate * 100).toFixed(1)}"></label>
     </div>
-    <p class="tiny muted" style="margin-top:8px">${A.ready ? `Historical volatility: 20-day ${pct(A.hv20, 0, false)}, 60-day ${pct(A.hv60, 0, false)} (${Math.round(A.hvPct * 100)}th percentile of the past year). ` : ''}Real option prices use <b>implied</b> volatility, which is usually higher than historical, especially before earnings. For realistic numbers, type your broker’s IV and premiums.</p>
+    <p class="tiny muted" style="margin-top:8px">${A.ready ? `Historical volatility: 20-day ${pct(A.hv20, 0, false)}, 60-day ${pct(A.hv60, 0, false)} (${ord(Math.round(A.hvPct * 100))} percentile of the past year). ` : ''}Real option prices use <b>implied</b> volatility, which is usually higher than historical, especially before earnings. For realistic numbers, type your broker’s IV and premiums.</p>
   </div>
 
   <div class="card"><div class="card-h"><h2>Strategy</h2><span class="small"><span class="tag info">★ Suggested: ${esc(STRATS[sug.key].name)}</span></span></div>
@@ -1491,7 +1492,7 @@ function renderPortfolio(el) {
     S.lots.push({ id: uid(), acct: 'real', sym, qty: +f.qty.value, price: +f.price.value, date: f.date.value || etDate(), stop: +f.stop.value || null });
     syncAcct(); save(); loadCore(sym); getEarningsAll(); toast(`${sym} added to your portfolio`, 'good', 3000); render();
   };
-  $('#cashForm', el).onsubmit = e => { e.preventDefault(); S.realCash = Math.max(0, +e.target.cash.value || 0); syncAcct(); save(); render(); };
+  $('#cashForm', el).onsubmit = e => { e.preventDefault(); S.realCash = Math.max(0, +e.target.cash.value || 0); if (S.realCash > 0 && !S.budgetSet) S.budget = Math.round(S.realCash); syncAcct(); save(); render(); };
   $('#alertForm', el).onsubmit = e => { e.preventDefault(); const f = e.target; const sym = f.sym.value.trim().toUpperCase(); if (!sym || !(+f.price.value > 0)) return; S.alerts.push({ sym, op: f.op.value, price: +f.price.value }); save(); loadCore(sym); render(); };
 }
 function syncAcct() {
@@ -1529,7 +1530,8 @@ const UNIVERSE = [
   ['Financials', 'JPM BAC WFC GS MS C SCHW BLK AXP V MA PYPL COF HOOD'],
   ['Health care', 'UNH LLY JNJ PFE MRK ABBV TMO ABT AMGN GILD ISRG VRTX CVS'],
   ['Industrials', 'CAT DE BA GE HON UPS UNP LMT RTX'],
-  ['Energy & other', 'XOM CVX COP SLB NEE LIN PLD']
+  ['Energy & other', 'XOM CVX COP SLB NEE LIN PLD'],
+  ['Smaller-price stocks', 'SOFI F GM LUV KHC KMI CMCSA WBD SNAP PINS RIVN NU RKLB AAL DAL CCL NCLH CSX KDP HPE HPQ NEM GLW USB TFC KEY DKNG CHWY PATH ET']
 ].flatMap(([sec, list]) => list.split(' ').map(sym => ({ sym, sec })));
 const SCAN = { running: false, stage: '', done: 0, total: 0, pre: null, plays: null, at: null, mode: null, filter: 'all' };
 function loadLastScan() {
@@ -1564,10 +1566,12 @@ async function runScan() {
     }));
     const pre = UNIVERSE.map(u => prescreen(u.sym, u.sec)).filter(Boolean).sort((a, b) => b.score - a.score);
     SCAN.pre = pre.slice(0, 40);
-    const finalists = pre.filter(x => !(ok(x.r52) && x.r52 < -20)).slice(0, 15);
+    const okTrend = x => !(ok(x.r52) && x.r52 < -20);
+    const top = pre.filter(okTrend).slice(0, 15);
+    const finalists = [...top, ...pre.filter(x => okTrend(x) && x.p <= 50 && !top.includes(x)).slice(0, 6)];
     const plays = [];
     if (hasHistory()) {
-      SCAN.stage = `Pass 2 of 2: deep-checking the top ${finalists.length} (price history, trend, analyst ratings). Free data plan: about 8 stocks a minute`;
+      SCAN.stage = `Pass 2 of 2: deep-checking the top ${finalists.length}, including the best stocks under $50 (price history, trend, analyst ratings). Free data plan: about 8 stocks a minute`;
       SCAN.done = 0; SCAN.total = finalists.length; invalidate();
       getEarningsAll(); await getHistory('SPY');
       await Promise.all(finalists.map(async x => { await Promise.all([getHistory(x.sym), getFundamentals(x.sym)]); SCAN.done++; invalidate(); }));
@@ -1576,7 +1580,11 @@ async function runScan() {
         const A = analyze(x.sym); if (!A.ready) continue;
         const ps = A.score + (bonus[A.v.k] || 0) + (A.plan.rr >= 2 ? 5 : A.plan.rr < 1 ? -5 : 0) - (ok(A.erDays) && A.erDays >= 0 && A.erDays <= 7 ? 5 : 0);
         const sug = labSuggest(A);
-        plays.push({ sym: x.sym, sec: x.sec, name: nameOf(x.sym), price: A.price, ps: Math.round(ps), score: A.score, k: A.v.k, label: A.v.label, tone: A.v.tone,
+        const T35 = 35 / 365, vv = Math.max(.12, A.hv20), rr = S.rate / 100;
+        const cspK = roundStrike(strikeFor('put', .25, A.price, T35, rr, vv), strikeStep(A.price));
+        const bp = buildLegs('bull_put', A.price, T35, rr, vv); bp.forEach(l => l.prem = Math.max(.01, bs(l.type, A.price, l.K, T35, rr, vv).p));
+        const spreadRisk = Math.max(0, -stratStats(bp, A.price, T35, rr, vv, 1).maxL);
+        plays.push({ hv: A.hv20, cspK, cspCol: cspK * 100, shares100: A.price * 100, spreadRisk, spreadKs: bp.map(l => l.K).sort((a, b) => b - a), sym: x.sym, sec: x.sec, name: nameOf(x.sym), price: A.price, ps: Math.round(ps), score: A.score, k: A.v.k, label: A.v.label, tone: A.v.tone,
           pros: A.reasons.filter(r => r.good).slice(0, 3).map(r => r.t), cons: A.reasons.filter(r => !r.good).slice(0, 2).map(r => r.t),
           zone: A.plan.zone, stop: A.plan.stop, target: A.plan.target, rr: A.plan.rr, opt: STRATS[sug.key].name, optWhy: sug.why,
           er: A.er && A.erDays >= 0 ? { date: A.er.date, days: A.erDays } : null });
@@ -1594,7 +1602,10 @@ function renderScan(el) {
   if (SCAN.mode !== (isDemo() ? 'demo' : 'live') && !SCAN.running) loadLastScan();
   const plays = SCAN.plays || [];
   const inSet = p => SCAN.filter === 'all' ? ['buyzone', 'hold', 'recover', 'extended'].includes(p.k) : SCAN.filter === 'other' ? ['recover', 'weak', 'avoid', 'bounce'].includes(p.k) : p.k === SCAN.filter;
-  const shown = plays.filter(inSet);
+  const B = S.budget || 2000;
+  const fits = p => ok(p.cspCol) && (p.cspCol <= B || p.shares100 <= B);
+  const calm = p => ok(p.hv) && p.hv < .35;
+  const shown = plays.filter(p => inSet(p) && (!S.scanFit || fits(p)) && (!S.scanCalm || calm(p)));
   const ago = SCAN.at ? Math.round((Date.now() - SCAN.at) / 60000) : null;
   const agoTxt = ago == null ? '' : ago < 1 ? 'just now' : ago < 60 ? `${ago} min ago` : ago < 1440 ? `${Math.round(ago / 60)} h ago` : `${Math.round(ago / 1440)} d ago`;
   const card = p => `<div class="card play" style="display:flex;flex-direction:column;gap:10px">
@@ -1607,21 +1618,34 @@ function renderScan(el) {
       <div class="tile"><div class="eyebrow">Reward : risk</div><div class="v ${p.rr >= 2 ? 'up' : p.rr < 1 ? 'down' : ''}" style="font-size:15px">${p.rr.toFixed(1)} : 1</div></div>
     </div>
     <ul class="reasons">${p.pros.map(t => `<li><span class="m up">+</span><span>${esc(t)}</span></li>`).join('')}${p.cons.map(t => `<li><span class="m down">${MINUS}</span><span>${esc(t)}</span></li>`).join('')}</ul>
-    <p class="small ink2"><b>Options idea:</b> ${esc(p.opt)}. ${esc(p.optWhy)}</p>
+    ${ok(p.cspCol) ? `<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface2)">
+      <div class="small"><b>With your ${usd(B, 0)} budget</b>${ok(p.hv) ? ` <span class="tag ${p.hv < .35 ? 'good' : p.hv > .6 ? 'warn' : 'neutral'}" title="20-day historical volatility">${p.hv < .35 ? 'Calmer' : p.hv > .6 ? 'Big swings' : 'Average swings'} · ${pct(p.hv, 0, false)} vol</span>` : ''}</div>
+      <ul class="reasons small" style="margin-top:6px;gap:3px">
+        <li><span class="m ${Math.floor(B / p.price) >= 1 ? 'up' : 'down'}">${Math.floor(B / p.price) >= 1 ? '✓' : '✗'}</span><span>Buy shares: up to <b>${Math.floor(B / p.price)}</b> at ${px(p.price)}</span></li>
+        <li><span class="m ${p.cspCol <= B ? 'up' : 'down'}">${p.cspCol <= B ? '✓' : '✗'}</span><span>Cash-secured put at the $${p.cspK} strike: needs <b>${usd(p.cspCol, 0)}</b> set aside ${q('opt-csp')}</span></li>
+        <li><span class="m ${p.shares100 <= B ? 'up' : 'down'}">${p.shares100 <= B ? '✓' : '✗'}</span><span>100 shares for covered calls: <b>${usd(p.shares100, 0)}</b></span></li>
+        <li><span class="m ${p.spreadRisk <= B ? 'up' : 'down'}">${p.spreadRisk <= B ? '✓' : '✗'}</span><span>Put credit spread ${p.spreadKs ? `${p.spreadKs[0]}/${p.spreadKs[1]}` : ''}: risks about <b>${usd(p.spreadRisk, 0)}</b> ${q('opt-bull_put')}</span></li>
+      </ul></div>` : ''}
+    <p class="small ink2"><b>Options idea:</b> ${esc(p.opt)}. ${esc(p.optWhy)}${ok(p.cspCol) && p.opt === 'Cash-secured put' && p.cspCol > B ? ` <b>That needs ${usd(p.cspCol, 0)}, more than your budget.</b> A put credit spread is the smaller version: about ${usd(p.spreadRisk, 0)} at risk.` : ''}</p>
     ${p.er && p.er.days <= 21 ? `<p class="small warn">! Earnings ${fmtDate(p.er.date)} (${p.er.days} days): expect a big move either way.</p>` : ''}
     <div class="row" style="margin-top:auto"><button class="btn sm" data-go="#/stock/${p.sym}">Research →</button><button class="btn ghost sm" data-go="#/options/${p.sym}">Options lab →</button>${S.watch.includes(p.sym) ? '<span class="tiny muted">✓ on watchlist</span>' : `<button class="btn ghost sm" data-addw="${p.sym}">+ Watchlist</button>`}</div>
   </div>`;
   el.innerHTML = `
   <div class="card"><div class="card-h"><h2>Find plays ${q('scanner')}</h2>${SCAN.at && !SCAN.running ? `<span class="small muted">Last scan ${agoTxt}</span>` : ''}</div>
-    <p class="small ink2">Scans ${UNIVERSE.length} large, actively traded US stocks for setups where <b>trend, momentum, price level and fundamentals</b> line up, then builds a trade plan for each. It applies the same rules as the Research page across the whole list. These are ideas to research, not recommendations.</p>
+    <p class="small ink2">Scans ${UNIVERSE.length} actively traded US stocks (large companies plus a group of lower-priced names) for setups where <b>trend, momentum, price level and fundamentals</b> line up, then builds a trade plan for each. It applies the same rules as the Research page across the whole list. These are ideas to research, not recommendations.</p>
     ${isDemo() ? '<p class="small warn" style="margin-top:6px">! Demo mode: results below come from simulated prices.</p>' : !S.tdKey ? '<p class="small warn" style="margin-top:6px">! Add a Twelve Data key in Settings. Pass 2 (charts and trade plans) needs price history.</p>' : ''}
     <div class="row" style="margin-top:12px">
       ${SCAN.running ? `<div style="flex:1;min-width:220px"><div class="small"><span class="spinner"></span> ${esc(SCAN.stage)}… <b class="mono">${SCAN.done}/${SCAN.total}</b></div><div class="meter" style="height:8px;margin-top:6px"><i style="width:${SCAN.total ? SCAN.done / SCAN.total * 100 : 0}%"></i></div><p class="tiny muted" style="margin-top:4px">You can use other tabs while it runs. The first scan of the day takes about 4–6 minutes on the free data plans; later scans are faster.</p></div>`
       : `<button class="btn" data-act="scan">${SCAN.at ? 'Rescan the market' : 'Scan the market'}</button><span class="tiny muted">Takes a few minutes on the free data plans. You can keep using the app.</span>`}
     </div>
   </div>
-  ${plays.length ? `<div class="row"><div class="chips">${SETUPS.map(([k, n]) => { const c = k === 'all' ? plays.filter(p => ['buyzone', 'hold', 'recover', 'extended'].includes(p.k)).length : k === 'other' ? plays.filter(p => ['recover', 'weak', 'avoid', 'bounce'].includes(p.k)).length : plays.filter(p => p.k === k).length; return `<button class="chip" aria-pressed="${SCAN.filter === k}" data-setup="${k}">${n} <span class="muted">${c}</span></button>`; }).join('')}</div></div>
-    ${shown.length ? `<div class="grid g3">${shown.map(card).join('')}</div>` : '<div class="card empty">No plays in this group right now.</div>'}`
+  ${plays.length ? `<div class="card" style="padding:12px 16px"><div class="form">
+      <label class="fld">My budget per trade $<input type="number" id="scanBudget" min="0" step="any" value="${B}" style="width:120px"></label>
+      <button class="chip" aria-pressed="${!!S.scanFit}" id="fitBtn">Fits my budget <span class="muted">${plays.filter(p => inSet(p) && fits(p)).length}</span></button>
+      <button class="chip" aria-pressed="${!!S.scanCalm}" id="calmBtn">Calmer stocks <span class="muted">${plays.filter(p => inSet(p) && calm(p)).length}</span></button>
+    </div><p class="tiny muted" style="margin-top:6px">“Fits my budget” = you could sell a cash-secured put or buy 100 shares with it. A cheaper stock isn’t automatically safer; “Calmer” means smaller daily swings (volatility under 35%). ${q('budget')}</p></div>
+    <div class="row"><div class="chips">${SETUPS.map(([k, n]) => { const c = k === 'all' ? plays.filter(p => ['buyzone', 'hold', 'recover', 'extended'].includes(p.k)).length : k === 'other' ? plays.filter(p => ['recover', 'weak', 'avoid', 'bounce'].includes(p.k)).length : plays.filter(p => p.k === k).length; return `<button class="chip" aria-pressed="${SCAN.filter === k}" data-setup="${k}">${n} <span class="muted">${c}</span></button>`; }).join('')}</div></div>
+    ${shown.length ? `<div class="grid g3">${shown.map(card).join('')}</div>` : `<div class="card empty">No plays match these filters right now.${S.scanFit ? ' Try a bigger budget or turn off “Fits my budget”. A put credit spread works with almost any budget.' : ''}</div>`}`
     : SCAN.at && !SCAN.running ? `<div class="card empty">${SCAN.plays ? 'No stocks passed the deep check this time. That can happen in a weak market; try again later.' : 'Pass 1 is done (see the ranking below). Add a Twelve Data key to get full plays.'}</div>` : ''}
   ${SCAN.pre && SCAN.pre.length ? `<div class="card"><details><summary class="small" style="cursor:pointer"><b>Pass 1 ranking</b> · top ${SCAN.pre.length} of ${UNIVERSE.length} screened</summary>
     <div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>#</th><th>Symbol</th><th class="r">Score</th><th class="r">Momentum</th><th class="r">Fundamentals</th><th class="r">Off 52-wk high</th><th class="r">6-month</th><th class="r">vs S&amp;P (3m)</th><th class="r">PEG</th></tr></thead><tbody>
@@ -1634,6 +1658,9 @@ function renderScan(el) {
     <li><span class="m up">+</span><span>Bonus for reasonable valuation for its growth (PEG), rising revenue, healthy margins, and analyst support.</span></li>
     <li><span class="m down">${MINUS}</span><span>Penalty for downtrends, poor reward:risk, and earnings within a week.</span></li></ul></div>` : ''}`;
   $$('[data-setup]', el).forEach(b => b.onclick = () => { SCAN.filter = b.dataset.setup; render(); });
+  const bi = $('#scanBudget', el); if (bi) bi.onchange = () => { S.budget = Math.max(0, +bi.value || 0); S.budgetSet = true; save(); render(); };
+  const fb = $('#fitBtn', el); if (fb) fb.onclick = () => { S.scanFit = !S.scanFit; save(); render(); };
+  const cb = $('#calmBtn', el); if (cb) cb.onclick = () => { S.scanCalm = !S.scanCalm; save(); render(); };
   $$('[data-addw]', el).forEach(b => b.onclick = e => { e.stopPropagation(); addWatch(b.dataset.addw); });
 }
 
@@ -1645,6 +1672,7 @@ const LEARN = [
     ['takeprofit', 'When to take profits', 'No rule is perfect, but common triggers are: RSI above 70 after a big run, price stretched 15–20%+ above the 50-day, price reaching a prior high/resistance, or a position up 20–25%+. Many traders sell in pieces (e.g. a third at a time) and trail a stop on the rest, so they bank gains without fully exiting a winner. Selling covered calls is another way to “take profits” on shares.'],
     ['plan', 'The trade plan', 'Before entering, decide three numbers: <b>entry</b>, <b>stop</b> (where you admit you’re wrong) and <b>target</b>. The app places the stop half an ATR below the nearest support (or 2×ATR below price) and the target at the next resistance, or a 3× risk projection if the stock is at highs. Write the plan in the journal and follow it.'],
     ['scanner', 'How “Find plays” works', 'The scanner checks about 100 large, liquid US stocks in two passes. <b>Pass 1</b> scores every stock on momentum (3/6/12-month returns and performance vs. the S&P 500), entry (how far below its 52-week high it trades, with a 3–15% pullback in a stock that is up on the year scoring best) and fundamentals (PEG, revenue growth, margins, ROE). <b>Pass 2</b> takes the 15 best, pulls their price history and runs the full Research analysis: trend vs. the 50/200-day averages, RSI, MACD, support and resistance, analyst ratings and earnings dates. Plays are ranked by that score, with a bonus for buy-the-dip setups and good reward:risk and a penalty for being extended or for earnings within a week. It only looks at large caps, and it can’t see news or why a stock moved, so always read the chart and headlines before acting.'],
+    ['budget', 'Trading options on a small account', 'Most option strategies work in blocks of 100 shares, so the stock price sets the minimum size. A <b>cash-secured put</b> needs strike × 100 in cash (a $40 strike needs $4,000); a <b>covered call</b> needs 100 shares. A <b>put credit spread</b> is the small-account version: buy a lower put to cap your loss, and the most you can lose is the gap between strikes × 100 minus the credit, often $100–$400. <b>A cheaper stock is not a safer stock.</b> A $10 stock can fall 50% as easily as a $500 one, and many low-priced stocks swing more. Lower risk comes from calmer stocks (lower volatility), defined-risk trades, and keeping each trade small relative to your account.'],
     ['regime', 'Market regime', 'Roughly 3 in 4 stocks move with the overall market. When the S&P 500 is above its 200-day average, buying dips tends to work; when it’s below, rallies tend to fail. Many traders reduce size or hold more cash in a risk-off regime.']
   ]],
   ['Technical indicators', [
@@ -1717,7 +1745,7 @@ const unb64u = str => decodeURIComponent(escape(atob(str.replace(/-/g, '+').repl
 function setupLink(includeAll) {
   const fk = $('#fhKey').value.trim() || S.fhKey, tk = $('#tdKey').value.trim() || S.tdKey;
   const d = { v: 1, fhKey: fk, tdKey: tk };
-  if (includeAll) for (const k of ['watch', 'lots', 'opts', 'alerts', 'cash', 'startCash', 'startDate', 'startSpy', 'acct', 'riskPct', 'rate', 'realCash', 'theme']) if (S[k] !== undefined) d[k] = S[k];
+  if (includeAll) for (const k of ['watch', 'lots', 'opts', 'alerts', 'cash', 'startCash', 'startDate', 'startSpy', 'acct', 'riskPct', 'rate', 'realCash', 'theme', 'budget', 'budgetSet']) if (S[k] !== undefined) d[k] = S[k];
   if (includeAll) d.journal = S.journal.slice(0, 60);
   return location.origin + location.pathname + '#setup=' + b64u(JSON.stringify(d));
 }
@@ -1741,7 +1769,7 @@ function handleSetupLink() {
   const msg = `Set up this browser from your Ticker Lab setup link?\n\nIt will save your API keys here${hasData ? ', and replace this browser’s watchlist, holdings and paper account with the ones in the link' : ''}.`;
   if (!confirm(msg)) return false;
   S.fhKey = d.fhKey.trim(); S.tdKey = (d.tdKey || '').trim();
-  const allowed = ['watch', 'lots', 'opts', 'alerts', 'journal', 'cash', 'startCash', 'startDate', 'startSpy', 'acct', 'riskPct', 'rate', 'realCash', 'theme'];
+  const allowed = ['watch', 'lots', 'opts', 'alerts', 'journal', 'cash', 'startCash', 'startDate', 'startSpy', 'acct', 'riskPct', 'rate', 'realCash', 'theme', 'budget', 'budgetSet'];
   for (const k of allowed) if (k in d) S[k] = d[k];
   S.ack = true; save(); cache.clear();
   return true;
