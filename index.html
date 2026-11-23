@@ -370,6 +370,7 @@ const cache = {
 };
 
 /* ---------- 3. data providers ---------- */
+// Burst limiter for Finnhub (per tab): up to `max` calls in any `windowMs`.
 function limiter(max, windowMs) {
   const stamps = []; let chain = Promise.resolve();
   const acquire = async () => {
@@ -381,11 +382,25 @@ function limiter(max, windowMs) {
     }
   };
   const fn = job => { const slot = chain.then(acquire); chain = slot; return slot.then(job); };
-  fn.pending = () => stamps.length;
+  return fn;
+}
+// Spaced limiter shared by every open tab/window of the app: one call per `gapMs`.
+// An exclusive Web Lock (where supported) serializes slot-taking across tabs, and the
+// last-call time lives in localStorage so reloads and other tabs respect it too.
+function sharedSpacer(gapMs, key) {
+  let chain = Promise.resolve();
+  const take = async () => {
+    let lastT = 0; try { lastT = +localStorage.getItem(key) || 0; } catch { }
+    const wait = lastT + gapMs - Date.now();
+    if (wait > 0) await sleep(Math.min(wait, gapMs));
+    try { localStorage.setItem(key, String(Date.now())); } catch { }
+  };
+  const acquire = () => navigator.locks ? navigator.locks.request(key, take) : take();
+  const fn = job => { const slot = chain.then(acquire); chain = slot.catch(() => { }); return slot.then(job); };
   return fn;
 }
 const fhLimit = limiter(55, 60000);
-const tdLimit = limiter(8, 61000);
+const tdLimit = sharedSpacer(9000, 'tl:rl:td');  // free plan allows 8/min; ~6.7/min leaves room for “Test keys”
 let tdQueued = 0;
 
 async function fh(path, params = {}) {
@@ -407,10 +422,16 @@ async function tdSeries(sym) {
   const u = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=1day&outputsize=520&apikey=${encodeURIComponent(S.tdKey)}`;
   tdQueued++; renderFeed();
   try {
-    const j = await tdLimit(() => fetch(u).then(r => r.json()));
+    let j;
+    for (let attempt = 0; ; attempt++) {
+      j = await tdLimit(() => fetch(u).then(r => r.json()));
+      // per-minute limit: wait for the window to clear and try again (the daily limit is not retried)
+      if (j.code === 429 && /minute/i.test(j.message || '') && attempt < 2) { await sleep(62000); continue; }
+      break;
+    }
     if (j.status === 'error' || !j.values) {
       if (j.code === 401) toastOnce('td401', 'Twelve Data rejected the API key. Check it in Settings.', 'bad');
-      if (j.code === 429) toastOnce('td429', 'Twelve Data daily/minute limit reached. History will retry later.', 'warn');
+      if (j.code === 429) toastOnce('td429', 'Twelve Data limit reached (8/min or 800/day). Charts will finish loading on your next visit.', 'warn');
       throw new Error('Twelve Data: ' + (j.message || 'no data').slice(0, 120));
     }
     return j.values.slice().reverse().map(v => [v.datetime.slice(0, 10), +v.open, +v.high, +v.low, +v.close, +v.volume || 0]);
