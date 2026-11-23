@@ -269,9 +269,9 @@ footer{font-size:12px;color:var(--muted);text-align:center;max-width:780px;margi
       <input id="tdKey" type="password" autocomplete="off" spellcheck="false" placeholder="e.g. 9f3c…"></label>
     <div class="row"><button type="button" class="btn ghost sm" id="testKeys">Test keys</button><span id="testOut" class="small"></span></div>
     <div class="row">
-      <label class="fld">Risk-free rate %<input id="setRate" type="number" step="0.05" min="0" max="15"></label>
-      <label class="fld">Real account size $<input id="setAcct" type="number" step="500" min="0"></label>
-      <label class="fld">Risk per trade %<input id="setRisk" type="number" step="0.25" min="0.1" max="10"></label>
+      <label class="fld">Risk-free rate %<input id="setRate" type="number" step="any" min="0" max="15"></label>
+      <label class="fld">Real account size $<input id="setAcct" type="number" step="any" min="0"></label>
+      <label class="fld">Risk per trade %<input id="setRisk" type="number" step="any" min="0.1" max="10"></label>
     </div>
     <div class="row">
       <button type="button" class="btn ghost sm" id="exportBtn">Export my data</button>
@@ -1051,8 +1051,8 @@ function renderStock(el) {
       </div>
       <div style="margin-top:14px"><div class="row"><h3>Position size ${q('sizing')}</h3></div>
         <div class="form" style="margin-top:6px">
-          <label class="fld">Account $<input type="number" id="psAcct" value="${S.acct}" step="500" min="0"></label>
-          <label class="fld w-s">Risk %<input type="number" id="psRisk" value="${S.riskPct}" step="0.25" min="0.1" max="10"></label>
+          <label class="fld">Account $<input type="number" id="psAcct" value="${S.acct}" step="any" min="0"></label>
+          <label class="fld w-s">Risk %<input type="number" id="psRisk" value="${S.riskPct}" step="any" min="0.1" max="10"></label>
         </div>
         <p class="small ink2" style="margin-top:8px">Risking <b>${usd(plan.riskBudget, 0)}</b> (${S.riskPct}% of account) with a stop ${usd(plan.riskPer)} below price → <b class="mono">${plan.shares} shares</b> (${usd(plan.shares * A.price, 0)} position). If the stop hits you lose about ${usd(plan.shares * plan.riskPer, 0)}; at target you’d make about ${usd(plan.shares * (plan.target - A.price), 0)}.</p>
       </div>
